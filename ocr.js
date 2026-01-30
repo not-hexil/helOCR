@@ -2,11 +2,45 @@ var ocrDemo = {
     CANVAS_WIDTH: 200,
     TRANSLATED_WIDTH: 20,
     PIXEL_WIDTH: 10,
+    BATCH_SIZE: 1,
 
-    drawGrid: function(ctx) {
-        for (var x = this.PIXEL_WIDTH, y = this.PIXEL_WIDTH; 
-                 x < this.CANVAS_WIDTH; x += this.PIXEL_WIDTH, 
-                 y += this.PIXEL_WIDTH) {
+    // Server configuration
+    HOST: "http://localhost",
+    PORT: "8000",
+
+    // Canvas colors
+    BLUE: "#0000FF",
+
+    // State variables
+    canvas: null,
+    ctx: null,
+    data: [],
+    trainArray: [],
+    trainingRequestCount: 0,
+
+    onLoadFunction: function () {
+        this.canvas = document.getElementById('canvas');
+        this.ctx = this.canvas.getContext('2d');
+
+        this.resetCanvas();
+
+        this.canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
+        this.canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
+        this.canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
+    },
+
+    resetCanvas: function () {
+        this.ctx.clearRect(0, 0, this.CANVAS_WIDTH, this.CANVAS_WIDTH);
+
+        this.data = new Array(this.TRANSLATED_WIDTH * this.TRANSLATED_WIDTH).fill(0);
+
+        this.drawGrid(this.ctx);
+    },
+
+    drawGrid: function (ctx) {
+        for (var x = this.PIXEL_WIDTH, y = this.PIXEL_WIDTH;
+            x < this.CANVAS_WIDTH; x += this.PIXEL_WIDTH,
+            y += this.PIXEL_WIDTH) {
             ctx.strokeStyle = this.BLUE;
             ctx.beginPath();
             ctx.moveTo(x, 0);
@@ -20,53 +54,49 @@ var ocrDemo = {
         }
     },
 
-    onMouseMove: function(e, ctx, canvas) {
-        if (!canvas.isDrawing) {
+    onMouseMove: function (e) {
+        if (!this.canvas.isDrawing) {
             return;
         }
-        this.fillSquare(ctx, 
-            e.clientX - canvas.offsetLeft, e.clientY - canvas.offsetTop);
+        this.fillSquare(this.ctx,
+            e.clientX - this.canvas.offsetLeft, e.clientY - this.canvas.offsetTop);
     },
 
-    onMouseDown: function(e, ctx, canvas) {
-        canvas.isDrawing = true;
-        this.fillSquare(ctx, 
-            e.clientX - canvas.offsetLeft, e.clientY - canvas.offsetTop);
+    onMouseDown: function (e) {
+        this.canvas.isDrawing = true;
+        this.fillSquare(this.ctx,
+            e.clientX - this.canvas.offsetLeft, e.clientY - this.canvas.offsetTop);
     },
 
-    onMouseUp: function(e) {
-        canvas.isDrawing = false;
+    onMouseUp: function (e) {
+        this.canvas.isDrawing = false;
     },
 
-    fillSquare: function(ctx, x, y) {
+    fillSquare: function (ctx, x, y) {
         var xPixel = Math.floor(x / this.PIXEL_WIDTH);
         var yPixel = Math.floor(y / this.PIXEL_WIDTH);
-        this.data[((xPixel - 1)  * this.TRANSLATED_WIDTH + yPixel) - 1] = 1;
-
-        if (xPixel < 0 || xPixel >= this.TRANSLATED_WIDTH || 
-        yPixel < 0 || yPixel >= this.TRANSLATED_WIDTH) {
-        return;
-        }
 
         var index = (yPixel * this.TRANSLATED_WIDTH) + xPixel;
-        this.data[index] = 1;
 
+        if (index >= 0 && index < this.data.length) {
+            this.data[index] = 1;
 
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(xPixel * this.PIXEL_WIDTH, yPixel * this.PIXEL_WIDTH, 
-            this.PIXEL_WIDTH, this.PIXEL_WIDTH);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(xPixel * this.PIXEL_WIDTH, yPixel * this.PIXEL_WIDTH,
+                this.PIXEL_WIDTH, this.PIXEL_WIDTH);
+        }
     },
 
-    train: function() {
+    train: function () {
         var digitVal = document.getElementById("digit").value;
         if (!digitVal || this.data.indexOf(1) < 0) {
             alert("Please type and draw a digit value in order to train the network");
             return;
         }
-        this.trainArray.push({"y0": this.data, "label": parseInt(digitVal)});
+
+        this.trainArray.push({ "y0": this.data, "label": parseInt(digitVal) });
         this.trainingRequestCount++;
 
-        // Time to send a training batch to the server.
         if (this.trainingRequestCount == this.BATCH_SIZE) {
             alert("Sending training data to server...");
             var json = {
@@ -80,7 +110,7 @@ var ocrDemo = {
         }
     },
 
-    test: function() {
+    test: function () {
         if (this.data.indexOf(1) < 0) {
             alert("Please draw a digit in order to test the network");
             return;
@@ -92,30 +122,31 @@ var ocrDemo = {
         this.sendData(json);
     },
 
-    receiveResponse: function(xmlHttp) {
+    receiveResponse: function (xmlHttp) {
         if (xmlHttp.status != 200) {
             alert("Server returned status " + xmlHttp.status);
             return;
         }
         var responseJSON = JSON.parse(xmlHttp.responseText);
         if (xmlHttp.responseText && responseJSON.type == "test") {
-            alert("The neural network predicts you wrote a \'" 
-                   + responseJSON.result + '\'');
+            alert("The neural network predicts you wrote a \'"
+                + responseJSON.result + '\'');
+        } else if (responseJSON.type == "train") {
+            alert("Training complete!");
         }
     },
 
-    onError: function(e) {
+    onError: function (e) {
         alert("Error occurred while connecting to server: " + e.target.statusText);
     },
 
-    sendData: function(json) {
+    sendData: function (json) {
         var xmlHttp = new XMLHttpRequest();
-        xmlHttp.open('POST', this.HOST + ":" + this.PORT, false);
-        xmlHttp.onload = function() { this.receiveResponse(xmlHttp); }.bind(this);
-        xmlHttp.onerror = function() { this.onError(xmlHttp) }.bind(this);
+        xmlHttp.open('POST', this.HOST + ":" + this.PORT, true);
+        xmlHttp.onload = function () { this.receiveResponse(xmlHttp); }.bind(this);
+        xmlHttp.onerror = function () { this.onError(xmlHttp) }.bind(this);
         var msg = JSON.stringify(json);
-        xmlHttp.setRequestHeader('Content-length', msg.length);
-        xmlHttp.setRequestHeader("Connection", "close");
+        xmlHttp.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
         xmlHttp.send(msg);
     }
 }
